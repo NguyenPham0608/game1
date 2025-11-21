@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tile Platformer</title>
+    <link rel="stylesheet" href="platformer.css">
+</head>
+
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div class="controls">
+            <p><strong>Play Mode:</strong> Arrow Keys or WASD to move, Space/W/Up to jump</p>
+            <p><strong>Wall Jump:</strong> While sliding on a wall, press jump (don't hold into the wall!) to launch
+                away</p>
+            <p><strong>Edit Mode:</strong> WASD to fly, Click to place tiles, E to toggle mode</p>
+        </div>
+        <div class="editor-panel">
+            <button id="toggleMode">Toggle Edit Mode (E)</button>
+            <div class="tile-selector">
+                <button class="tile-btn" data-tile="0">Empty</button>
+                <button class="tile-btn" data-tile="1">Ground</button>
+                <button class="tile-btn" data-tile="2">Brick</button>
+                <button class="tile-btn" data-tile="3">Spike</button>
+                <button class="tile-btn" data-tile="4">Flag</button>
+                <button class="tile-btn" data-tile="5">Coin</button>
+            </div>
+            <div class="level-io">
+                <button id="saveLevel">Save Level</button>
+                <button id="loadLevel">Load Level</button>
+                <button id="clearLevel">Clear Level</button>
+                <textarea id="levelData" placeholder="Level code will appear here..."></textarea>
+            </div>
+        </div>
+    </div>
+    <script src="platformer.js"></script>
+</body>
+
+</html>
