@@ -6,6 +6,7 @@ const CANVAS_HEIGHT = 600;
 
 // Player sprite configuration
 const PLAYER_SPRITE_HEIGHT = 32; // Target height for player sprite (width calculated from aspect ratio)
+const PLAYER_SCALE = 0.2
 
 // Target frame rate for physics calculations (60 FPS baseline)
 const TARGET_FPS = 60;
@@ -41,9 +42,9 @@ const TILE_IMAGE_PATHS = {
     [TILES.COIN]: 'images/coin.png'
 };
 
-// Player images
+// Player images - now stores both image and dimensions
 const PLAYER_IMAGES = {
-    run: [], // Will hold player1.png through player16.png
+    run: [], // Will hold objects with {image, width, height} for each frame
     jump: null,
     wallSlide: null,
     idle: null
@@ -57,20 +58,19 @@ const PLAYER_IMAGE_PATHS = {
 };
 
 let imagesLoaded = false;
-let playerSpriteDimensions = null; // Will store calculated sprite dimensions
+let playerSpriteDimensions = null; // Will store average/base dimensions for hitbox
 
 // Calculate player sprite dimensions from loaded image
-function calculateSpriteDimensions(image, targetHeight = PLAYER_SPRITE_HEIGHT) {
+function calculateSpriteDimensions(image) {
     if (!image || !image.naturalWidth || !image.naturalHeight) {
         return { width: 24, height: 32 }; // Fallback
     }
 
-    // Scale image to target height while maintaining aspect ratio
-    const aspectRatio = image.naturalWidth / image.naturalHeight;
-    const height = targetHeight;
-    const width = Math.floor(height * aspectRatio);
+    // Use natural dimensions (no scaling)
+    const width = image.naturalWidth;
+    const height = image.naturalHeight;
 
-    console.log(`Sprite natural size: ${image.naturalWidth}x${image.naturalHeight}, scaled to: ${width}x${height}`);
+    console.log(`Sprite natural size: ${width}x${height}`);
 
     return { width, height };
 }
@@ -110,20 +110,35 @@ function loadPlayerImages(callback) {
     let loadedCount = 0;
     let totalImages = PLAYER_IMAGE_PATHS.run.length + 3; // run frames + jump + wallSlide + idle
 
+    // Track dimensions for calculating average hitbox size
+    let totalWidth = 0;
+    let totalHeight = 0;
+    let frameCount = 0;
+
     // Load running animation frames
     PLAYER_IMAGE_PATHS.run.forEach((path, index) => {
         const img = new Image();
         img.onload = () => {
-            PLAYER_IMAGES.run[index] = img;
+            const dims = calculateSpriteDimensions(img);
+            PLAYER_IMAGES.run[index] = {
+                image: img,
+                width: dims.width,
+                height: dims.height
+            };
 
-            // Calculate sprite dimensions from the first loaded sprite
-            if (!playerSpriteDimensions && index === 0) {
-                playerSpriteDimensions = calculateSpriteDimensions(img, 32);
-                console.log('Player sprite dimensions:', playerSpriteDimensions);
-            }
+            // Track for average
+            totalWidth += dims.width;
+            totalHeight += dims.height;
+            frameCount++;
 
             loadedCount++;
             if (loadedCount === totalImages) {
+                // Calculate average dimensions for hitbox
+                playerSpriteDimensions = {
+                    width: Math.floor(totalWidth / frameCount * PLAYER_SCALE),
+                    height: Math.floor(totalHeight / frameCount * PLAYER_SCALE)
+                };
+                console.log('Average player sprite dimensions for hitbox:', playerSpriteDimensions);
                 imagesLoaded = true;
                 callback();
             }
@@ -142,16 +157,18 @@ function loadPlayerImages(callback) {
     // Load jump sprite
     const jumpImg = new Image();
     jumpImg.onload = () => {
-        PLAYER_IMAGES.jump = jumpImg;
-
-        // Calculate sprite dimensions if not already set
-        if (!playerSpriteDimensions) {
-            playerSpriteDimensions = calculateSpriteDimensions(jumpImg, 32);
-            console.log('Player sprite dimensions:', playerSpriteDimensions);
-        }
+        const dims = calculateSpriteDimensions(jumpImg);
+        PLAYER_IMAGES.jump = {
+            image: jumpImg,
+            width: dims.width,
+            height: dims.height
+        };
 
         loadedCount++;
         if (loadedCount === totalImages) {
+            if (!playerSpriteDimensions) {
+                playerSpriteDimensions = dims;
+            }
             imagesLoaded = true;
             callback();
         }
@@ -169,7 +186,12 @@ function loadPlayerImages(callback) {
     // Load wall slide sprite
     const wallSlideImg = new Image();
     wallSlideImg.onload = () => {
-        PLAYER_IMAGES.wallSlide = wallSlideImg;
+        const dims = calculateSpriteDimensions(wallSlideImg);
+        PLAYER_IMAGES.wallSlide = {
+            image: wallSlideImg,
+            width: dims.width,
+            height: dims.height
+        };
         loadedCount++;
         if (loadedCount === totalImages) {
             imagesLoaded = true;
@@ -189,7 +211,12 @@ function loadPlayerImages(callback) {
     // Load idle sprite
     const idleImg = new Image();
     idleImg.onload = () => {
-        PLAYER_IMAGES.idle = idleImg;
+        const dims = calculateSpriteDimensions(idleImg);
+        PLAYER_IMAGES.idle = {
+            image: idleImg,
+            width: dims.width,
+            height: dims.height
+        };
         loadedCount++;
         if (loadedCount === totalImages) {
             imagesLoaded = true;
@@ -243,23 +270,23 @@ class Player {
 
         this.velocityX = 0;
         this.velocityY = 0;
-        this.speed = 1.2;
-        this.jumpPower = 12;
-        this.gravity = 0.5;
+        this.speed = 0.65;
+        this.jumpPower = 9;
+        this.gravity = 0.4;
         this.onGround = false;
         this.coins = 0;
         this.editMode = false;
         this.flySpeed = 8;
         this.onWall = false; // 'left', 'right', or false
         this.wallSlideSpeed = 2;
-        this.wallJumpPowerX = 18;
+        this.wallJumpPowerX = 12;
         this.wallJumpPowerY = 12;
         this.jumpReleased = true;
 
         // Animation properties
         this.animationFrame = 0;
         this.animationTimer = 0;
-        this.animationSpeed = 3; // Frames to wait before changing sprite (lower = faster)
+        this.animationSpeed = 1; // Frames to wait before changing sprite (lower = faster)
         this.facingRight = true;
     }
 
@@ -314,7 +341,7 @@ class Player {
             } else if (keys.right) {
                 this.velocityX += this.speed * deltaTime;
             }
-            this.velocityX *= Math.pow(0.8, deltaTime); // Friction with deltaTime compensation
+            this.velocityX *= Math.pow(0.9, deltaTime); // Friction with deltaTime compensation
 
             // Jumping and wall jumping - only if jump button was released
             if (keys.jump && this.jumpReleased) {
@@ -520,36 +547,44 @@ class Player {
         const screenY = this.y - camera.y;
 
         // Determine which sprite to use
-        let currentSprite = null;
+        let currentSpriteData = null;
 
         if (imagesLoaded) {
             if (this.onWall && !this.onGround) {
                 // Wall sliding
-                currentSprite = PLAYER_IMAGES.wallSlide;
+                currentSpriteData = PLAYER_IMAGES.wallSlide;
             } else if (!this.onGround) {
                 // Jumping/falling
-                currentSprite = PLAYER_IMAGES.jump;
+                currentSpriteData = PLAYER_IMAGES.jump;
             } else if (Math.abs(this.velocityX) > 0.5) {
                 // Running
-                currentSprite = PLAYER_IMAGES.run[this.animationFrame];
+                currentSpriteData = PLAYER_IMAGES.run[this.animationFrame];
             } else {
                 // Idle
-                currentSprite = PLAYER_IMAGES.idle;
+                currentSpriteData = PLAYER_IMAGES.idle;
             }
         }
 
-        // Draw the sprite
-        if (currentSprite) {
+        // Draw the sprite with its natural dimensions
+        if (currentSpriteData && currentSpriteData.image) {
             // Save canvas state
             ctx.save();
+
+            // Calculate offset to keep sprite centered on hitbox
+            const spriteWidth = currentSpriteData.width * PLAYER_SCALE;
+            const spriteHeight = currentSpriteData.height * PLAYER_SCALE;
+
+            // Center the sprite on the player's position
+            const offsetX = (this.width - spriteWidth) / 2;
+            const offsetY = (this.height - spriteHeight) / 2;
 
             // Flip sprite if facing left
             if (!this.facingRight) {
                 ctx.translate(screenX + this.width, screenY);
                 ctx.scale(-1, 1);
-                ctx.drawImage(currentSprite, 0, 0, this.width, this.height);
+                ctx.drawImage(currentSpriteData.image, offsetX, offsetY, spriteWidth, spriteHeight);
             } else {
-                ctx.drawImage(currentSprite, screenX, screenY, this.width, this.height);
+                ctx.drawImage(currentSpriteData.image, screenX + offsetX, screenY + offsetY, spriteWidth, spriteHeight);
             }
 
             // Restore canvas state
@@ -577,7 +612,7 @@ class Player {
         // );
 
         // Draw wall slide indicator (optional visual feedback)
-        if (this.onWall && !this.onGround && !currentSprite) {
+        if (this.onWall && !this.onGround && !currentSpriteData) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
             if (this.onWall === 'left') {
                 // Draw lines on left side
