@@ -1,8 +1,15 @@
-// Tile-based Scrolling Platformer Game
+// Tile-based Scrolling Platformer Game with DeltaTime
 
 const TILE_SIZE = 32;
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
+
+// Player sprite configuration
+const PLAYER_SPRITE_HEIGHT = 32; // Target height for player sprite (width calculated from aspect ratio)
+
+// Target frame rate for physics calculations (60 FPS baseline)
+const TARGET_FPS = 60;
+const FRAME_TIME = 1000 / TARGET_FPS;
 
 // Tile types
 const TILES = {
@@ -46,10 +53,27 @@ const PLAYER_IMAGE_PATHS = {
     run: Array.from({ length: 16 }, (_, i) => `images/player/run${i + 1}.png`),
     jump: 'images/player/jump.png',
     wallSlide: 'images/player/wallslide.png',
-    idle: 'images/player/jump.png'
+    idle: 'images/player/idle.png'
 };
 
 let imagesLoaded = false;
+let playerSpriteDimensions = null; // Will store calculated sprite dimensions
+
+// Calculate player sprite dimensions from loaded image
+function calculateSpriteDimensions(image, targetHeight = PLAYER_SPRITE_HEIGHT) {
+    if (!image || !image.naturalWidth || !image.naturalHeight) {
+        return { width: 24, height: 32 }; // Fallback
+    }
+
+    // Scale image to target height while maintaining aspect ratio
+    const aspectRatio = image.naturalWidth / image.naturalHeight;
+    const height = targetHeight;
+    const width = Math.floor(height * aspectRatio);
+
+    console.log(`Sprite natural size: ${image.naturalWidth}x${image.naturalHeight}, scaled to: ${width}x${height}`);
+
+    return { width, height };
+}
 
 // Load tile images
 function loadTileImages(callback) {
@@ -91,6 +115,13 @@ function loadPlayerImages(callback) {
         const img = new Image();
         img.onload = () => {
             PLAYER_IMAGES.run[index] = img;
+
+            // Calculate sprite dimensions from the first loaded sprite
+            if (!playerSpriteDimensions && index === 0) {
+                playerSpriteDimensions = calculateSpriteDimensions(img, 32);
+                console.log('Player sprite dimensions:', playerSpriteDimensions);
+            }
+
             loadedCount++;
             if (loadedCount === totalImages) {
                 imagesLoaded = true;
@@ -112,6 +143,13 @@ function loadPlayerImages(callback) {
     const jumpImg = new Image();
     jumpImg.onload = () => {
         PLAYER_IMAGES.jump = jumpImg;
+
+        // Calculate sprite dimensions if not already set
+        if (!playerSpriteDimensions) {
+            playerSpriteDimensions = calculateSpriteDimensions(jumpImg, 32);
+            console.log('Player sprite dimensions:', playerSpriteDimensions);
+        }
+
         loadedCount++;
         if (loadedCount === totalImages) {
             imagesLoaded = true;
@@ -191,14 +229,21 @@ const LEVEL_1 = [
 ];
 
 class Player {
-    constructor(x, y) {
+    constructor(x, y, spriteWidth = null, spriteHeight = null) {
         this.x = x;
         this.y = y;
-        this.width = 28;
-        this.height = 28;
+
+        // Visual dimensions (will be set based on loaded sprite)
+        // Default fallback if images don't load
+        this.width = spriteWidth || 24;
+        this.height = spriteHeight || 32;
+
+        // Hitbox dimensions (85% of sprite size for better gameplay feel)
+        this.updateHitbox();
+
         this.velocityX = 0;
         this.velocityY = 0;
-        this.speed = 0.5;
+        this.speed = 1.2;
         this.jumpPower = 12;
         this.gravity = 0.5;
         this.onGround = false;
@@ -218,7 +263,21 @@ class Player {
         this.facingRight = true;
     }
 
-    update(keys, level) {
+    updateHitbox() {
+        // Hitbox is 85% of sprite size, centered
+        this.hitboxWidth = Math.floor(this.width * 0.85);
+        this.hitboxHeight = Math.floor(this.height * 0.85);
+        this.hitboxOffsetX = Math.floor((this.width - this.hitboxWidth) / 2);
+        this.hitboxOffsetY = Math.floor((this.height - this.hitboxHeight) / 2);
+    }
+
+    setDimensions(width, height) {
+        this.width = width;
+        this.height = height;
+        this.updateHitbox();
+    }
+
+    update(keys, level, deltaTime) {
         if (this.editMode) {
             // Flying controls in edit mode
             this.velocityX = 0;
@@ -229,8 +288,8 @@ class Player {
             if (keys.up) this.velocityY = -this.flySpeed;
             if (keys.down) this.velocityY = this.flySpeed;
 
-            this.x += this.velocityX;
-            this.y += this.velocityY;
+            this.x += this.velocityX * deltaTime;
+            this.y += this.velocityY * deltaTime;
 
             // Keep player in bounds
             this.x = Math.max(0, Math.min(this.x, level[0].length * TILE_SIZE - this.width));
@@ -251,11 +310,11 @@ class Player {
             // Normal play mode physics
             // Horizontal movement
             if (keys.left) {
-                this.velocityX += -this.speed;
+                this.velocityX += -this.speed * deltaTime;
             } else if (keys.right) {
-                this.velocityX += this.speed;
+                this.velocityX += this.speed * deltaTime;
             }
-            this.velocityX *= 0.8; // Friction
+            this.velocityX *= Math.pow(0.8, deltaTime); // Friction with deltaTime compensation
 
             // Jumping and wall jumping - only if jump button was released
             if (keys.jump && this.jumpReleased) {
@@ -290,7 +349,7 @@ class Player {
             }
 
             // Apply gravity
-            this.velocityY += this.gravity;
+            this.velocityY += this.gravity * deltaTime;
 
             // Wall slide - slow down fall speed when on wall
             if (this.onWall && !this.onGround && this.velocityY > 0) {
@@ -305,21 +364,21 @@ class Player {
             }
 
             // Update position with collision detection
-            this.x += this.velocityX;
+            this.x += this.velocityX * deltaTime;
             this.checkCollisionX(level);
 
-            this.y += this.velocityY;
+            this.y += this.velocityY * deltaTime;
             this.checkCollisionY(level);
 
             // Update animation
-            this.updateAnimation();
+            this.updateAnimation(deltaTime);
         }
     }
 
-    updateAnimation() {
+    updateAnimation(deltaTime) {
         // Only animate when moving horizontally
         if (Math.abs(this.velocityX) > 0.5 && this.onGround) {
-            this.animationTimer++;
+            this.animationTimer += deltaTime;
             if (this.animationTimer >= this.animationSpeed) {
                 this.animationTimer = 0;
                 this.animationFrame = (this.animationFrame + 1) % 16; // Cycle through 16 frames
@@ -332,11 +391,17 @@ class Player {
     }
 
     checkCollisionX(level) {
+        // Use hitbox for collision detection
+        const hitboxLeft = this.x + this.hitboxOffsetX;
+        const hitboxRight = hitboxLeft + this.hitboxWidth;
+        const hitboxTop = this.y + this.hitboxOffsetY;
+        const hitboxBottom = hitboxTop + this.hitboxHeight;
+
         // Add small margin to avoid checking ground tiles directly beneath
-        const leftTile = Math.floor(this.x / TILE_SIZE);
-        const rightTile = Math.floor((this.x + this.width) / TILE_SIZE);
-        const topTile = Math.floor((this.y + 1) / TILE_SIZE); // +1 to avoid ground below
-        const bottomTile = Math.floor((this.y + this.height - 1) / TILE_SIZE); // -1 to avoid ground below
+        const leftTile = Math.floor(hitboxLeft / TILE_SIZE);
+        const rightTile = Math.floor(hitboxRight / TILE_SIZE);
+        const topTile = Math.floor((hitboxTop + 1) / TILE_SIZE); // +1 to avoid ground below
+        const bottomTile = Math.floor((hitboxBottom - 1) / TILE_SIZE); // -1 to avoid ground below
 
         // Reset wall state
         this.onWall = false;
@@ -346,11 +411,11 @@ class Player {
                 if (this.isSolidTile(level, row, col)) {
                     if (this.velocityX > 0) {
                         // Moving right, collide with left side of tile
-                        this.x = col * TILE_SIZE - this.width;
+                        this.x = col * TILE_SIZE - this.hitboxWidth - this.hitboxOffsetX;
                         this.onWall = 'right'; // On right wall
                     } else if (this.velocityX < 0) {
                         // Moving left, collide with right side of tile
-                        this.x = (col + 1) * TILE_SIZE;
+                        this.x = (col + 1) * TILE_SIZE - this.hitboxOffsetX;
                         this.onWall = 'left'; // On left wall
                     }
                     this.velocityX = 0;
@@ -367,7 +432,7 @@ class Player {
         // Check if still touching a wall even when not moving
         if (!this.onWall && !this.onGround) {
             // Check left wall
-            const leftWallCol = Math.floor((this.x - 1) / TILE_SIZE);
+            const leftWallCol = Math.floor((hitboxLeft - 1) / TILE_SIZE);
             for (let row = topTile; row <= bottomTile; row++) {
                 if (this.isSolidTile(level, row, leftWallCol)) {
                     this.onWall = 'left';
@@ -377,7 +442,7 @@ class Player {
 
             // Check right wall
             if (!this.onWall) {
-                const rightWallCol = Math.floor((this.x + this.width + 1) / TILE_SIZE);
+                const rightWallCol = Math.floor((hitboxRight + 1) / TILE_SIZE);
                 for (let row = topTile; row <= bottomTile; row++) {
                     if (this.isSolidTile(level, row, rightWallCol)) {
                         this.onWall = 'right';
@@ -389,11 +454,17 @@ class Player {
     }
 
     checkCollisionY(level) {
+        // Use hitbox for collision detection
+        const hitboxLeft = this.x + this.hitboxOffsetX;
+        const hitboxRight = hitboxLeft + this.hitboxWidth;
+        const hitboxTop = this.y + this.hitboxOffsetY;
+        const hitboxBottom = hitboxTop + this.hitboxHeight;
+
         // Add small margin to avoid checking walls to the sides
-        const leftTile = Math.floor((this.x + 1) / TILE_SIZE); // +1 to avoid side walls
-        const rightTile = Math.floor((this.x + this.width - 1) / TILE_SIZE); // -1 to avoid side walls
-        const topTile = Math.floor(this.y / TILE_SIZE);
-        const bottomTile = Math.floor((this.y + this.height) / TILE_SIZE);
+        const leftTile = Math.floor((hitboxLeft + 1) / TILE_SIZE); // +1 to avoid side walls
+        const rightTile = Math.floor((hitboxRight - 1) / TILE_SIZE); // -1 to avoid side walls
+        const topTile = Math.floor(hitboxTop / TILE_SIZE);
+        const bottomTile = Math.floor(hitboxBottom / TILE_SIZE);
 
         this.onGround = false;
 
@@ -402,11 +473,11 @@ class Player {
                 if (this.isSolidTile(level, row, col)) {
                     if (this.velocityY > 0) {
                         // Falling down, collide with top of tile
-                        this.y = row * TILE_SIZE - this.height;
+                        this.y = row * TILE_SIZE - this.hitboxHeight - this.hitboxOffsetY;
                         this.onGround = true;
                     } else if (this.velocityY < 0) {
                         // Jumping up, collide with bottom of tile
-                        this.y = (row + 1) * TILE_SIZE;
+                        this.y = (row + 1) * TILE_SIZE - this.hitboxOffsetY;
                     }
                     this.velocityY = 0;
                 }
@@ -495,6 +566,16 @@ class Player {
             ctx.fillRect(screenX + 8, screenY + 18, 12, 2);
         }
 
+        // Optional: Draw hitbox outline for debugging (uncomment to see hitbox)
+        // ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+        // ctx.lineWidth = 2;
+        // ctx.strokeRect(
+        //     screenX + this.hitboxOffsetX, 
+        //     screenY + this.hitboxOffsetY, 
+        //     this.hitboxWidth, 
+        //     this.hitboxHeight
+        // );
+
         // Draw wall slide indicator (optional visual feedback)
         if (this.onWall && !this.onGround && !currentSprite) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
@@ -543,7 +624,9 @@ class Game {
         this.levelWidth = this.level[0].length * TILE_SIZE;
         this.levelHeight = this.level.length * TILE_SIZE;
 
-        this.player = new Player(64, 300);
+        // Create player with dimensions from loaded sprites (or defaults)
+        const dims = playerSpriteDimensions || { width: 24, height: 32 };
+        this.player = new Player(64, 300, dims.width, dims.height);
         this.camera = new Camera(this.levelWidth, this.levelHeight);
 
         this.keys = {
@@ -557,6 +640,10 @@ class Game {
         this.editMode = false;
         this.selectedTile = TILES.GROUND;
         this.mouseDown = false;
+
+        // Delta time tracking
+        this.lastTime = performance.now();
+        this.deltaTime = 0;
 
         this.setupInput();
         this.setupEditor();
@@ -757,15 +844,16 @@ class Game {
     }
 
     update() {
-        this.player.update(this.keys, this.level);
+        this.player.update(this.keys, this.level, this.deltaTime);
         this.camera.follow(this.player);
 
         // Check if player reached flag (only in play mode)
         if (!this.editMode) {
-            const playerCenterX = this.player.x + this.player.width / 2;
-            const playerCenterY = this.player.y + this.player.height / 2;
-            const flagCol = Math.floor(playerCenterX / TILE_SIZE);
-            const flagRow = Math.floor(playerCenterY / TILE_SIZE);
+            // Use hitbox center for flag collision
+            const hitboxCenterX = this.player.x + this.player.hitboxOffsetX + this.player.hitboxWidth / 2;
+            const hitboxCenterY = this.player.y + this.player.hitboxOffsetY + this.player.hitboxHeight / 2;
+            const flagCol = Math.floor(hitboxCenterX / TILE_SIZE);
+            const flagRow = Math.floor(hitboxCenterY / TILE_SIZE);
 
             if (this.level[flagRow] && this.level[flagRow][flagCol] === TILES.FLAG) {
                 alert(`You win! Coins collected: ${this.player.coins}`);
@@ -866,32 +954,47 @@ class Game {
 
     drawUI() {
         this.ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        this.ctx.fillRect(10, 10, 150, 40);
+        this.ctx.fillRect(10, 10, 150, 60);
 
         this.ctx.fillStyle = '#FFF';
         this.ctx.font = '16px Arial';
         this.ctx.fillText(`Coins: ${this.player.coins}`, 20, 35);
 
+        // Display FPS
+        const fps = Math.round(1000 / (this.deltaTime * FRAME_TIME));
+        this.ctx.fillText(`FPS: ${fps}`, 20, 55);
+
         // Edit mode indicator
         if (this.editMode) {
             this.ctx.fillStyle = 'rgba(118, 75, 162, 0.9)';
-            this.ctx.fillRect(10, 60, 150, 40);
+            this.ctx.fillRect(10, 80, 150, 40);
             this.ctx.fillStyle = '#FFF';
             this.ctx.font = 'bold 16px Arial';
-            this.ctx.fillText('EDIT MODE', 20, 85);
+            this.ctx.fillText('EDIT MODE', 20, 105);
         }
     }
 
     resetGame() {
         this.level = JSON.parse(JSON.stringify(LEVEL_1));
-        this.player = new Player(64, 300);
+        const dims = playerSpriteDimensions || { width: 24, height: 32 };
+        this.player = new Player(64, 300, dims.width, dims.height);
         this.camera = new Camera(this.levelWidth, this.levelHeight);
     }
 
-    gameLoop() {
+    gameLoop(currentTime = 0) {
+        // Calculate delta time (normalized to 60 FPS baseline)
+        const rawDeltaTime = currentTime - this.lastTime;
+        this.deltaTime = rawDeltaTime / FRAME_TIME;
+        this.lastTime = currentTime;
+
+        // Cap deltaTime to prevent spiral of death on lag spikes
+        if (this.deltaTime > 3) {
+            this.deltaTime = 1;
+        }
+
         this.update();
         this.draw();
-        requestAnimationFrame(() => this.gameLoop());
+        requestAnimationFrame((time) => this.gameLoop(time));
     }
 }
 
@@ -900,7 +1003,13 @@ window.addEventListener('load', () => {
     // Load tile images first, then player images, then start game
     loadTileImages(() => {
         loadPlayerImages(() => {
-            new Game();
+            const game = new Game();
+
+            // If sprite dimensions were calculated during loading, update the player
+            if (playerSpriteDimensions) {
+                game.player.setDimensions(playerSpriteDimensions.width, playerSpriteDimensions.height);
+                console.log('Applied sprite dimensions to player:', playerSpriteDimensions);
+            }
         });
     });
 });
