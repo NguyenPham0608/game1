@@ -608,8 +608,8 @@ class Camera {
     }
 
     follow(player) {
-        this.x = player.x + player.width / 2 - CANVAS_WIDTH / 2;
-        this.y = player.y + player.height / 2 - CANVAS_HEIGHT / 2;
+        this.x += ((player.x + player.width / 2 - CANVAS_WIDTH / 2) - this.x) / 20;
+        this.y += ((player.y + player.height / 2 - CANVAS_HEIGHT / 2) - this.y) / 20;
         this.x = Math.max(0, Math.min(this.x, this.levelWidth - CANVAS_WIDTH));
         this.y = Math.max(0, Math.min(this.y, this.levelHeight - CANVAS_HEIGHT));
     }
