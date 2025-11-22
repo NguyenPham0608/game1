@@ -655,7 +655,17 @@ class Game {
         this.canvas.width = CANVAS_WIDTH;
         this.canvas.height = CANVAS_HEIGHT;
 
-        this.level = JSON.parse(JSON.stringify(LEVEL_1)); // Deep copy
+        // Level management
+        this.currentLevelIndex = 1; // Start with level 1
+        this.totalLevels = 4; // Update this if you add more levels
+        this.levelFiles = [
+            'levels/level1.txt',
+            'levels/level2.txt',
+            'levels/level3.txt',
+            'levels/level4.txt'
+        ];
+
+        this.level = JSON.parse(JSON.stringify(LEVEL_1)); // Deep copy (fallback)
         this.levelWidth = this.level[0].length * TILE_SIZE;
         this.levelHeight = this.level.length * TILE_SIZE;
 
@@ -682,7 +692,60 @@ class Game {
 
         this.setupInput();
         this.setupEditor();
+
+        // Load the first level from file
+        this.loadLevelFromFile(this.currentLevelIndex);
+
         this.gameLoop();
+    }
+
+    // NEW METHOD: Load level from file
+    async loadLevelFromFile(levelNumber) {
+        if (levelNumber < 1 || levelNumber > this.totalLevels) {
+            console.log('Invalid level number');
+            return;
+        }
+
+        try {
+            const levelPath = this.levelFiles[levelNumber - 1];
+            const response = await fetch(levelPath);
+            const compressed = await response.text();
+
+            // Decode the level
+            const levelString = atob(compressed.trim());
+            const newLevel = JSON.parse(levelString);
+
+            // Validate level format
+            if (!Array.isArray(newLevel) || !Array.isArray(newLevel[0])) {
+                throw new Error('Invalid level format');
+            }
+
+            this.level = newLevel;
+            this.levelWidth = this.level[0].length * TILE_SIZE;
+            this.levelHeight = this.level.length * TILE_SIZE;
+            this.camera = new Camera(this.levelWidth, this.levelHeight);
+
+            // Reset player
+            const dims = playerSpriteDimensions || { width: 24, height: 32 };
+            this.player = new Player(64, 300, dims.width, dims.height);
+            this.player.editMode = this.editMode;
+
+            console.log(`Level ${levelNumber} loaded successfully!`);
+        } catch (error) {
+            console.error(`Error loading level ${levelNumber}:`, error);
+            alert(`Could not load level ${levelNumber}. Using default level.`);
+        }
+    }
+
+    // NEW METHOD: Progress to next level
+    nextLevel() {
+        this.currentLevelIndex++;
+        if (this.currentLevelIndex > this.totalLevels) {
+            // Game completed!
+            alert(`🎉 Congratulations! You've completed all ${this.totalLevels} levels! 🎉\n\nTotal Coins: ${this.player.coins}`);
+            this.currentLevelIndex = 1; // Loop back to level 1
+        }
+        this.loadLevelFromFile(this.currentLevelIndex);
     }
 
     setupInput() {
@@ -934,8 +997,9 @@ class Game {
             const flagRow = Math.floor(hitboxCenterY / TILE_SIZE);
 
             if (this.level[flagRow] && this.level[flagRow][flagCol] === TILES.FLAG) {
-                alert(`You win! Coins collected: ${this.player.coins}`);
-                this.resetGame();
+                // Level completed! Progress to next level
+                alert(`Level ${this.currentLevelIndex} Complete! Coins collected: ${this.player.coins}`);
+                this.nextLevel();
             }
         }
     }
@@ -1033,31 +1097,30 @@ class Game {
 
     drawUI() {
         this.ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        this.ctx.fillRect(10, 10, 150, 60);
+        this.ctx.fillRect(10, 10, 200, 80);
 
         this.ctx.fillStyle = '#FFF';
         this.ctx.font = '16px Arial';
-        this.ctx.fillText(`Coins: ${this.player.coins}`, 20, 35);
+        this.ctx.fillText(`Level: ${this.currentLevelIndex}/${this.totalLevels}`, 20, 35);
+        this.ctx.fillText(`Coins: ${this.player.coins}`, 20, 55);
 
         // Display FPS
         const fps = Math.round(1000 / (this.deltaTime * FRAME_TIME));
-        this.ctx.fillText(`FPS: ${fps}`, 20, 55);
+        this.ctx.fillText(`FPS: ${fps}`, 20, 75);
 
         // Edit mode indicator
         if (this.editMode) {
             this.ctx.fillStyle = 'rgba(118, 75, 162, 0.9)';
-            this.ctx.fillRect(10, 80, 150, 40);
+            this.ctx.fillRect(10, 100, 150, 40);
             this.ctx.fillStyle = '#FFF';
             this.ctx.font = 'bold 16px Arial';
-            this.ctx.fillText('EDIT MODE', 20, 105);
+            this.ctx.fillText('EDIT MODE', 20, 125);
         }
     }
 
     resetGame() {
-        this.level = JSON.parse(JSON.stringify(LEVEL_1));
-        const dims = playerSpriteDimensions || { width: 24, height: 32 };
-        this.player = new Player(64, 300, dims.width, dims.height);
-        this.camera = new Camera(this.levelWidth, this.levelHeight);
+        this.currentLevelIndex = 1;
+        this.loadLevelFromFile(this.currentLevelIndex);
     }
 
     gameLoop(currentTime = 0) {
