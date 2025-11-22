@@ -543,8 +543,8 @@ class Player {
     }
 
     draw(ctx, camera) {
-        const screenX = this.x - camera.x;
-        const screenY = this.y - camera.y;
+        const screenX = Math.round(this.x - camera.x);
+        const screenY = Math.round(this.y - camera.y);
 
         // Determine which sprite to use
         let currentSpriteData = null;
@@ -787,6 +787,16 @@ class Game {
                 this.clearLevel();
             }
         });
+
+        // New level button
+        document.getElementById('newLevel').addEventListener('click', () => {
+            const width = parseInt(document.getElementById('levelWidth').value);
+            const height = parseInt(document.getElementById('levelHeight').value);
+
+            if (confirm(`Create a new ${width}x${height} level? This will clear the current level.`)) {
+                this.createNewLevel(width, height);
+            }
+        });
     }
 
     toggleEditMode() {
@@ -878,6 +888,39 @@ class Game {
         }
     }
 
+    createNewLevel(width, height) {
+        // Validate dimensions
+        if (width < 10 || width > 200 || height < 10 || height > 100) {
+            alert('Invalid dimensions! Width must be 10-200, height must be 10-100.');
+            return;
+        }
+
+        // Create new empty level with specified dimensions
+        this.level = Array(height).fill(0).map(() => Array(width).fill(0));
+
+        // Add ground at the bottom two rows
+        for (let col = 0; col < width; col++) {
+            this.level[height - 1][col] = TILES.GROUND;
+            this.level[height - 2][col] = TILES.GROUND;
+        }
+
+        // Update level dimensions
+        this.levelWidth = width * TILE_SIZE;
+        this.levelHeight = height * TILE_SIZE;
+
+        // Create new camera with updated dimensions
+        this.camera = new Camera(this.levelWidth, this.levelHeight);
+
+        // Reset player position
+        this.player.x = 64;
+        this.player.y = 300;
+        this.player.velocityX = 0;
+        this.player.velocityY = 0;
+        this.player.coins = 0;
+
+        alert(`New ${width}x${height} level created!`);
+    }
+
     update() {
         this.player.update(this.keys, this.level, this.deltaTime);
         this.camera.follow(this.player);
@@ -931,8 +974,9 @@ class Game {
     }
 
     drawTile(tile, col, row) {
-        const x = col * TILE_SIZE - this.camera.x;
-        const y = row * TILE_SIZE - this.camera.y;
+        // Round camera position to prevent tile gaps during movement
+        const x = col * TILE_SIZE - Math.round(this.camera.x);
+        const y = row * TILE_SIZE - Math.round(this.camera.y);
 
         // Try to use image first, fallback to colored rectangles
         if (TILE_IMAGES[tile]) {

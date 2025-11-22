@@ -142,3 +142,42 @@ body {
     font-weight: bold;
     font-size: 14px;
 }
+
+.dimension-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    background: white;
+    border-radius: 6px;
+    border: 2px solid #ddd;
+}
+
+.dimension-controls label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    margin-top: 5px;
+}
+
+.dimension-controls input[type="number"] {
+    padding: 8px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    width: 100%;
+}
+
+.dimension-controls input[type="number"]:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+#newLevel {
+    margin-top: 5px;
+    background: #28a745;
+}
+
+#newLevel:hover {
+    background: #218838;
+}
