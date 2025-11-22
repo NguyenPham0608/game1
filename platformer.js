@@ -34,6 +34,23 @@ const TILE_IMAGE_PATHS = {
     [TILES.COIN]: 'images/coin.png'
 };
 
+// Player images
+const PLAYER_IMAGES = {
+    run: [], // Will hold player1.png through player16.png
+    jump: null,
+    wallSlide: null,
+    idle: null
+};
+
+const PLAYER_IMAGE_PATHS = {
+    run: Array.from({ length: 16 }, (_, i) => `images/player/run${i + 1}.png`),
+    jump: 'images/player/jump.png',
+    wallSlide: 'images/player/wallslide.png',
+    idle: 'images/player/jump.png'
+};
+
+let imagesLoaded = false;
+
 // Load tile images
 function loadTileImages(callback) {
     let loadedCount = 0;
@@ -62,6 +79,94 @@ function loadTileImages(callback) {
         };
         img.src = path;
     }
+}
+
+// Load player images
+function loadPlayerImages(callback) {
+    let loadedCount = 0;
+    let totalImages = PLAYER_IMAGE_PATHS.run.length + 3; // run frames + jump + wallSlide + idle
+
+    // Load running animation frames
+    PLAYER_IMAGE_PATHS.run.forEach((path, index) => {
+        const img = new Image();
+        img.onload = () => {
+            PLAYER_IMAGES.run[index] = img;
+            loadedCount++;
+            if (loadedCount === totalImages) {
+                imagesLoaded = true;
+                callback();
+            }
+        };
+        img.onerror = () => {
+            console.log(`Failed to load ${path}, player will use fallback rectangle`);
+            loadedCount++;
+            if (loadedCount === totalImages) {
+                imagesLoaded = true;
+                callback();
+            }
+        };
+        img.src = path;
+    });
+
+    // Load jump sprite
+    const jumpImg = new Image();
+    jumpImg.onload = () => {
+        PLAYER_IMAGES.jump = jumpImg;
+        loadedCount++;
+        if (loadedCount === totalImages) {
+            imagesLoaded = true;
+            callback();
+        }
+    };
+    jumpImg.onerror = () => {
+        console.log(`Failed to load jump sprite, using fallback`);
+        loadedCount++;
+        if (loadedCount === totalImages) {
+            imagesLoaded = true;
+            callback();
+        }
+    };
+    jumpImg.src = PLAYER_IMAGE_PATHS.jump;
+
+    // Load wall slide sprite
+    const wallSlideImg = new Image();
+    wallSlideImg.onload = () => {
+        PLAYER_IMAGES.wallSlide = wallSlideImg;
+        loadedCount++;
+        if (loadedCount === totalImages) {
+            imagesLoaded = true;
+            callback();
+        }
+    };
+    wallSlideImg.onerror = () => {
+        console.log(`Failed to load wall slide sprite, using fallback`);
+        loadedCount++;
+        if (loadedCount === totalImages) {
+            imagesLoaded = true;
+            callback();
+        }
+    };
+    wallSlideImg.src = PLAYER_IMAGE_PATHS.wallSlide;
+
+    // Load idle sprite
+    const idleImg = new Image();
+    idleImg.onload = () => {
+        PLAYER_IMAGES.idle = idleImg;
+        loadedCount++;
+        if (loadedCount === totalImages) {
+            imagesLoaded = true;
+            callback();
+        }
+    };
+    idleImg.onerror = () => {
+        console.log(`Failed to load idle sprite, using fallback`);
+        loadedCount++;
+        if (loadedCount === totalImages) {
+            imagesLoaded = true;
+            callback();
+        }
+    };
+    idleImg.src = PLAYER_IMAGE_PATHS.idle;
 }
 
 // Sample level (you can easily create more levels)
@@ -93,7 +198,7 @@ class Player {
         this.height = 28;
         this.velocityX = 0;
         this.velocityY = 0;
-        this.speed = 5;
+        this.speed = 0.5;
         this.jumpPower = 12;
         this.gravity = 0.5;
         this.onGround = false;
@@ -102,9 +207,15 @@ class Player {
         this.flySpeed = 8;
         this.onWall = false; // 'left', 'right', or false
         this.wallSlideSpeed = 2;
-        this.wallJumpPowerX = 18; // Increased even more for better horizontal distance
+        this.wallJumpPowerX = 18;
         this.wallJumpPowerY = 12;
-        this.jumpReleased = true; // Track if jump button was released
+        this.jumpReleased = true;
+
+        // Animation properties
+        this.animationFrame = 0;
+        this.animationTimer = 0;
+        this.animationSpeed = 3; // Frames to wait before changing sprite (lower = faster)
+        this.facingRight = true;
     }
 
     update(keys, level) {
@@ -128,6 +239,13 @@ class Player {
             // Track if jump button was released
             if (!keys.jump) {
                 this.jumpReleased = true;
+            }
+
+            // Update facing direction based on movement
+            if (keys.left) {
+                this.facingRight = false;
+            } else if (keys.right) {
+                this.facingRight = true;
             }
 
             // Normal play mode physics
@@ -155,11 +273,13 @@ class Player {
                         canWallJump = true;
                         this.velocityX = this.wallJumpPowerX;
                         this.velocityY = -this.wallJumpPowerY;
+                        this.facingRight = true;
                     } else if (this.onWall === 'right' && !keys.right) {
                         // On right wall, can jump if NOT pressing right (into wall)
                         canWallJump = true;
                         this.velocityX = -this.wallJumpPowerX;
                         this.velocityY = -this.wallJumpPowerY;
+                        this.facingRight = false;
                     }
 
                     if (canWallJump) {
@@ -190,6 +310,24 @@ class Player {
 
             this.y += this.velocityY;
             this.checkCollisionY(level);
+
+            // Update animation
+            this.updateAnimation();
+        }
+    }
+
+    updateAnimation() {
+        // Only animate when moving horizontally
+        if (Math.abs(this.velocityX) > 0.5 && this.onGround) {
+            this.animationTimer++;
+            if (this.animationTimer >= this.animationSpeed) {
+                this.animationTimer = 0;
+                this.animationFrame = (this.animationFrame + 1) % 16; // Cycle through 16 frames
+            }
+        } else {
+            // Reset to first frame when not moving
+            this.animationFrame = 0;
+            this.animationTimer = 0;
         }
     }
 
@@ -307,42 +445,68 @@ class Player {
     }
 
     draw(ctx, camera) {
-        ctx.fillStyle = '#FF6B6B';
-        ctx.fillRect(
-            this.x - camera.x,
-            this.y - camera.y,
-            this.width,
-            this.height
-        );
+        const screenX = this.x - camera.x;
+        const screenY = this.y - camera.y;
 
-        // Draw a simple face
-        ctx.fillStyle = '#000';
-        ctx.fillRect(this.x - camera.x + 8, this.y - camera.y + 8, 4, 4);
-        ctx.fillRect(this.x - camera.x + 16, this.y - camera.y + 8, 4, 4);
-        ctx.fillRect(this.x - camera.x + 8, this.y - camera.y + 18, 12, 2);
+        // Determine which sprite to use
+        let currentSprite = null;
 
-        // Draw wall slide indicator
-        if (this.onWall && !this.onGround) {
+        if (imagesLoaded) {
+            if (this.onWall && !this.onGround) {
+                // Wall sliding
+                currentSprite = PLAYER_IMAGES.wallSlide;
+            } else if (!this.onGround) {
+                // Jumping/falling
+                currentSprite = PLAYER_IMAGES.jump;
+            } else if (Math.abs(this.velocityX) > 0.5) {
+                // Running
+                currentSprite = PLAYER_IMAGES.run[this.animationFrame];
+            } else {
+                // Idle
+                currentSprite = PLAYER_IMAGES.idle;
+            }
+        }
+
+        // Draw the sprite
+        if (currentSprite) {
+            // Save canvas state
+            ctx.save();
+
+            // Flip sprite if facing left
+            if (!this.facingRight) {
+                ctx.translate(screenX + this.width, screenY);
+                ctx.scale(-1, 1);
+                ctx.drawImage(currentSprite, 0, 0, this.width, this.height);
+            } else {
+                ctx.drawImage(currentSprite, screenX, screenY, this.width, this.height);
+            }
+
+            // Restore canvas state
+            ctx.restore();
+        } else {
+            // Fallback to rectangle if images aren't loaded
+            ctx.fillStyle = '#FF6B6B';
+            ctx.fillRect(screenX, screenY, this.width, this.height);
+
+            // Draw a simple face
+            ctx.fillStyle = '#000';
+            ctx.fillRect(screenX + 8, screenY + 8, 4, 4);
+            ctx.fillRect(screenX + 16, screenY + 8, 4, 4);
+            ctx.fillRect(screenX + 8, screenY + 18, 12, 2);
+        }
+
+        // Draw wall slide indicator (optional visual feedback)
+        if (this.onWall && !this.onGround && !currentSprite) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
             if (this.onWall === 'left') {
                 // Draw lines on left side
                 for (let i = 0; i < 3; i++) {
-                    ctx.fillRect(
-                        this.x - camera.x - 4,
-                        this.y - camera.y + 6 + i * 8,
-                        2,
-                        4
-                    );
+                    ctx.fillRect(screenX - 4, screenY + 6 + i * 8, 2, 4);
                 }
             } else if (this.onWall === 'right') {
                 // Draw lines on right side
                 for (let i = 0; i < 3; i++) {
-                    ctx.fillRect(
-                        this.x - camera.x + this.width + 2,
-                        this.y - camera.y + 6 + i * 8,
-                        2,
-                        4
-                    );
+                    ctx.fillRect(screenX + this.width + 2, screenY + 6 + i * 8, 2, 4);
                 }
             }
         }
@@ -733,8 +897,10 @@ class Game {
 
 // Start the game when the page loads
 window.addEventListener('load', () => {
-    // Load tile images first, then start game
+    // Load tile images first, then player images, then start game
     loadTileImages(() => {
-        new Game();
+        loadPlayerImages(() => {
+            new Game();
+        });
     });
 });
