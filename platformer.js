@@ -1,4 +1,4 @@
-// Tile-based Scrolling Platformer Game with Auto-tiling
+// Tile-based Scrolling Platformer Game with Advanced 15-Tile Auto-tiling
 
 const TILE_SIZE = 32;
 const CANVAS_WIDTH = 800;
@@ -32,20 +32,26 @@ const TILE_COLORS = {
     [TILES.COIN]: '#FFA500'
 };
 
-// Tile images - now with 9 variants for auto-tiling materials
+// Tile images - now with 15 variants for advanced auto-tiling materials
 const TILE_IMAGES = {};
 const TILE_IMAGE_PATHS = {
-    // Ground tiles (9 variants for auto-tiling)
+    // Ground tiles (15 variants for advanced auto-tiling)
     [TILES.GROUND]: {
-        1: 'images/ground/ground1.png',  // Top-left corner
-        2: 'images/ground/ground2.png',  // Top edge
-        3: 'images/ground/ground3.png',  // Top-right corner
-        4: 'images/ground/ground4.png',  // Left edge
-        5: 'images/ground/ground5.png',  // Center (all sides connected)
-        6: 'images/ground/ground6.png',  // Right edge
-        7: 'images/ground/ground7.png',  // Bottom-left corner
-        8: 'images/ground/ground8.png',  // Bottom edge
-        9: 'images/ground/ground9.png'   // Bottom-right corner
+        1: 'images/ground/ground1.png',   // Top-left corner (outer)
+        2: 'images/ground/ground2.png',   // Top edge
+        3: 'images/ground/ground3.png',   // Top-right corner (outer)
+        4: 'images/ground/ground4.png',   // Left edge
+        5: 'images/ground/ground5.png',   // Center (all sides connected)
+        6: 'images/ground/ground6.png',   // Right edge
+        7: 'images/ground/ground7.png',   // Bottom-left corner (outer)
+        8: 'images/ground/ground8.png',   // Bottom edge
+        9: 'images/ground/ground9.png',   // Bottom-right corner (outer)
+        10: 'images/ground/ground10.png', // Top isolated (connects below only)
+        11: 'images/ground/ground11.png', // Vertical left edge
+        12: 'images/ground/ground12.png', // Vertical right edge
+        13: 'images/ground/ground13.png', // Bottom isolated (connects above only)
+        14: 'images/ground/ground14.png', // Inner corner (bottom-left concave)
+        15: 'images/ground/ground15.png'  // Inner corner (bottom-right concave)
     },
     // Non-auto-tiling tiles (single image)
     [TILES.BRICK]: 'images/brick.png',
@@ -56,7 +62,6 @@ const TILE_IMAGE_PATHS = {
 
 // Materials that support auto-tiling
 const AUTO_TILE_MATERIALS = [TILES.GROUND, TILES.BRICK];
-
 // Player images
 const PLAYER_IMAGES = {
     run: [],
@@ -68,8 +73,10 @@ const PLAYER_IMAGES = {
 const PLAYER_IMAGE_PATHS = {
     run: Array.from({ length: 16 }, (_, i) => `images/player/run${i + 1}.png`),
     jump: 'images/player/jump.png',
+    fall: 'images/player/fall.png',
     wallSlide: 'images/player/wallslide.png',
     idle: 'images/player/idle.png'
+
 };
 
 let imagesLoaded = false;
@@ -107,7 +114,7 @@ function loadTileImages(callback) {
 
     for (const [tileType, paths] of Object.entries(TILE_IMAGE_PATHS)) {
         if (typeof paths === 'object') {
-            // Auto-tiling material with 9 variants
+            // Auto-tiling material with multiple variants
             TILE_IMAGES[tileType] = {};
             for (const [variant, path] of Object.entries(paths)) {
                 const img = new Image();
@@ -221,6 +228,33 @@ function loadPlayerImages(callback) {
     };
     jumpImg.src = PLAYER_IMAGE_PATHS.jump;
 
+    const fallImg = new Image();
+    fallImg.onload = () => {
+        const dims = calculateSpriteDimensions(fallImg);
+        PLAYER_IMAGES.fall = {
+            image: fallImg,
+            width: dims.width,
+            height: dims.height
+        };
+        loadedCount++;
+        if (loadedCount === totalImages) {
+            if (!playerSpriteDimensions) {
+                playerSpriteDimensions = dims;
+            }
+            imagesLoaded = true;
+            callback();
+        }
+    };
+    fallImg.onerror = () => {
+        console.log(`Failed to load jump sprite, using fallback`);
+        loadedCount++;
+        if (loadedCount === totalImages) {
+            imagesLoaded = true;
+            callback();
+        }
+    };
+    fallImg.src = PLAYER_IMAGE_PATHS.fall;
+
     const wallSlideImg = new Image();
     wallSlideImg.onload = () => {
         const dims = calculateSpriteDimensions(wallSlideImg);
@@ -270,39 +304,53 @@ function loadPlayerImages(callback) {
     idleImg.src = PLAYER_IMAGE_PATHS.idle;
 }
 
-// AUTO-TILING ALGORITHM
-// Determines which tile variant (1-9) to use based on neighbors
+// AUTO-TILING LOOKUP TABLE
+// Pattern format: [Top][Right][Bottom][Left] where 0=exposed, 1=connected
+// Example: '0110' = exposed top and left, connects right and bottom
+const TILE_PATTERNS = {
+    '0110': 1,  // Top-left outer corner
+    '0111': 2,  // Top edge
+    '0011': 3,  // Top-right outer corner
+    '1110': 4,  // Left edge
+    '1111': 5,  // Center (all sides connected)
+    '1011': 6,  // Right edge
+    '1100': 7,  // Bottom-left outer corner
+    '1101': 8,  // Bottom edge
+    '1001': 9,  // Bottom-right outer corner
+    '0010': 10, // Top isolated (only bottom connects)
+    '0100': 11, // Only right connects
+    '0001': 12, // Only left connects
+    '1000': 13, // Bottom isolated (only top connects)
+    '0101': 14, // Left and right connect (horizontal strip)
+    '1010': 15  // Top and bottom connect (vertical strip)
+};
+
+// ADVANCED AUTO-TILING ALGORITHM (15-tile system)
+// Uses binary pattern matching: 0=exposed edge (blue), 1=connection (red)
 function getAutoTileVariant(level, row, col, tileType) {
     // Check if this tile type supports auto-tiling
     if (!AUTO_TILE_MATERIALS.includes(tileType)) {
         return null; // Not an auto-tile material
     }
 
-    // Check neighbors (only tiles of the same type connect)
+    // Check direct neighbors (only tiles of the same type connect)
     const hasTop = getTile(level, row - 1, col) === tileType;
+    const hasRight = getTile(level, row, col + 1) === tileType;
     const hasBottom = getTile(level, row + 1, col) === tileType;
     const hasLeft = getTile(level, row, col - 1) === tileType;
-    const hasRight = getTile(level, row, col + 1) === tileType;
 
-    // Determine which variant to use based on neighbors
-    // Tile layout:
-    // 1 2 3
-    // 4 5 6
-    // 7 8 9
+    // Build connection pattern string: [Top][Right][Bottom][Left]
+    const pattern = `${hasTop ? '1' : '0'}${hasRight ? '1' : '0'}${hasBottom ? '1' : '0'}${hasLeft ? '1' : '0'}`;
 
-    // Corner cases
-    if (!hasTop && !hasLeft) return 1;      // Top-left corner
-    if (!hasTop && !hasRight) return 3;     // Top-right corner
-    if (!hasBottom && !hasLeft) return 7;   // Bottom-left corner
-    if (!hasBottom && !hasRight) return 9;  // Bottom-right corner
+    // Look up the tile variant from the pattern
+    const tileVariant = TILE_PATTERNS[pattern];
 
-    // Edge cases
-    if (!hasTop && hasLeft && hasRight) return 2;       // Top edge
-    if (!hasBottom && hasLeft && hasRight) return 8;    // Bottom edge
-    if (!hasLeft && hasTop && hasBottom) return 4;      // Left edge
-    if (!hasRight && hasTop && hasBottom) return 6;     // Right edge
+    if (tileVariant) {
+        return tileVariant;
+    }
 
-    // Center (all sides connected)
+    // Fallback to center tile if pattern not found
+    console.log(`Unknown pattern: ${pattern} at row ${row}, col ${col}`);
     return 5;
 }
 
@@ -555,7 +603,11 @@ class Player {
             if (this.onWall && !this.onGround) {
                 currentSpriteData = PLAYER_IMAGES.wallSlide;
             } else if (!this.onGround) {
-                currentSpriteData = PLAYER_IMAGES.jump;
+                if (this.velocityY < 0) {
+                    currentSpriteData = PLAYER_IMAGES.jump;
+                } else {
+                    currentSpriteData = PLAYER_IMAGES.fall;
+                }
             } else if (Math.abs(this.velocityX) > 0.5) {
                 currentSpriteData = PLAYER_IMAGES.run[this.animationFrame];
             } else {
@@ -842,7 +894,7 @@ class Game {
         this.player.x = 64;
         this.player.y = 300;
         this.player.velocityX = 0;
-        this.player.velocityY = 0;
+        this.velocityY = 0;
         this.player.coins = 0;
         alert(`New ${width}x${height} level created!`);
     }

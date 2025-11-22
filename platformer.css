@@ -11,7 +11,7 @@ body {
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    padding: 20px;
+    overflow-x: hidden;
 }
 
 .game-container {
@@ -23,8 +23,6 @@ body {
 
 #gameCanvas {
     display: block;
-    border: 3px solid #333;
-    border-radius: 8px;
     background: #87CEEB;
 }
 
