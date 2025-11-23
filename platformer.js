@@ -1,8 +1,8 @@
 // Tile-based Scrolling Platformer Game with Advanced 15-Tile Auto-tiling
 
 const TILE_SIZE = 32;
-const CANVAS_WIDTH = 800;
-const CANVAS_HEIGHT = 600;
+const CANVAS_WIDTH = window.innerWidth;
+const CANVAS_HEIGHT = window.innerHeight;
 
 // Player sprite configuration
 const PLAYER_SPRITE_HEIGHT = 32;
@@ -19,7 +19,8 @@ const TILES = {
     BRICK: 2,
     SPIKE: 3,
     FLAG: 4,
-    COIN: 5
+    COIN: 5,
+    CRATE: 6
 };
 
 // Color mapping for tiles
@@ -29,7 +30,8 @@ const TILE_COLORS = {
     [TILES.BRICK]: '#CD853F',
     [TILES.SPIKE]: '#FF4444',
     [TILES.FLAG]: '#FFD700',
-    [TILES.COIN]: '#FFA500'
+    [TILES.COIN]: '#FFA500',
+    [TILES.CRATE]: '#8B6914'
 };
 
 // Tile images - now with 15 variants for advanced auto-tiling materials
@@ -57,11 +59,125 @@ const TILE_IMAGE_PATHS = {
     [TILES.BRICK]: 'images/brick.png',
     [TILES.SPIKE]: 'images/spike.png',
     [TILES.FLAG]: 'images/flag.png',
-    [TILES.COIN]: 'images/coin.png'
+    [TILES.COIN]: 'images/coin.png',
+    [TILES.CRATE]: 'images/crate.png'
 };
 
 // Materials that support auto-tiling
 const AUTO_TILE_MATERIALS = [TILES.GROUND, TILES.BRICK];
+
+// Crate class for pushable objects
+class Crate {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = TILE_SIZE;
+        this.height = TILE_SIZE;
+        this.velocityX = 0;
+        this.velocityY = 0;
+        this.gravity = 0.4;
+        this.friction = 0.85;
+        this.onGround = false;
+    }
+
+    update(level, deltaTime) {
+        // Apply gravity
+        this.velocityY += this.gravity * deltaTime;
+
+        // Apply friction
+        this.velocityX *= Math.pow(this.friction, deltaTime);
+
+        // Cap velocities
+        if (Math.abs(this.velocityX) < 0.1) this.velocityX = 0;
+        if (this.velocityY > 15) this.velocityY = 15;
+
+        // Update position
+        this.x += this.velocityX * deltaTime;
+        this.checkCollisionX(level);
+
+        this.y += this.velocityY * deltaTime;
+        this.checkCollisionY(level);
+    }
+
+    checkCollisionX(level) {
+        const leftTile = Math.floor(this.x / TILE_SIZE);
+        const rightTile = Math.floor((this.x + this.width - 1) / TILE_SIZE);
+        const topTile = Math.floor((this.y + 1) / TILE_SIZE);
+        const bottomTile = Math.floor((this.y + this.height - 1) / TILE_SIZE);
+
+        for (let row = topTile; row <= bottomTile; row++) {
+            for (let col = leftTile; col <= rightTile; col++) {
+                if (this.isSolidTile(level, row, col)) {
+                    if (this.velocityX > 0) {
+                        this.x = col * TILE_SIZE - this.width;
+                    } else if (this.velocityX < 0) {
+                        this.x = (col + 1) * TILE_SIZE;
+                    }
+                    this.velocityX = 0;
+                }
+            }
+        }
+    }
+
+    checkCollisionY(level) {
+        const leftTile = Math.floor((this.x + 1) / TILE_SIZE);
+        const rightTile = Math.floor((this.x + this.width - 1) / TILE_SIZE);
+        const topTile = Math.floor(this.y / TILE_SIZE);
+        const bottomTile = Math.floor((this.y + this.height) / TILE_SIZE);
+
+        this.onGround = false;
+
+        for (let row = topTile; row <= bottomTile; row++) {
+            for (let col = leftTile; col <= rightTile; col++) {
+                if (this.isSolidTile(level, row, col)) {
+                    if (this.velocityY > 0) {
+                        this.y = row * TILE_SIZE - this.height;
+                        this.onGround = true;
+                    } else if (this.velocityY < 0) {
+                        this.y = (row + 1) * TILE_SIZE;
+                    }
+                    this.velocityY = 0;
+                }
+            }
+        }
+    }
+
+    isSolidTile(level, row, col) {
+        const tile = getTile(level, row, col);
+        return tile === TILES.GROUND || tile === TILES.BRICK;
+    }
+
+    draw(ctx, camera) {
+        const screenX = Math.round(this.x - camera.x);
+        const screenY = Math.round(this.y - camera.y);
+
+        if (TILE_IMAGES[TILES.CRATE] && typeof TILE_IMAGES[TILES.CRATE] !== 'object') {
+            ctx.drawImage(TILE_IMAGES[TILES.CRATE], screenX, screenY, this.width, this.height);
+        } else {
+            // Fallback: draw brown crate
+            ctx.fillStyle = '#8B6914';
+            ctx.fillRect(screenX, screenY, this.width, this.height);
+
+            // Wood texture
+            ctx.strokeStyle = '#654321';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(screenX + 2, screenY + 2, this.width - 4, this.height - 4);
+
+            // Crate planks
+            ctx.beginPath();
+            ctx.moveTo(screenX + 8, screenY);
+            ctx.lineTo(screenX + 8, screenY + this.height);
+            ctx.moveTo(screenX + this.width - 8, screenY);
+            ctx.lineTo(screenX + this.width - 8, screenY + this.height);
+            ctx.moveTo(screenX, screenY + 8);
+            ctx.lineTo(screenX + this.width, screenY + 8);
+            ctx.moveTo(screenX, screenY + this.height - 8);
+            ctx.lineTo(screenX + this.width, screenY + this.height - 8);
+            ctx.stroke();
+        }
+    }
+}
+
 // Player images
 const PLAYER_IMAGES = {
     run: [],
@@ -407,6 +523,7 @@ class Player {
         this.animationTimer = 0;
         this.animationSpeed = 1;
         this.facingRight = true;
+        this.pushingCrate = null;
     }
 
     updateHitbox() {
@@ -422,7 +539,7 @@ class Player {
         this.updateHitbox();
     }
 
-    update(keys, level, deltaTime) {
+    update(keys, level, crates, deltaTime) {
         if (this.editMode) {
             this.velocityX = 0;
             this.velocityY = 0;
@@ -484,14 +601,73 @@ class Player {
             }
             this.x += this.velocityX * deltaTime;
             this.checkCollisionX(level);
+            this.checkCrateCollisionX(crates, deltaTime);
             this.y += this.velocityY * deltaTime;
             this.checkCollisionY(level);
+            this.checkCrateCollisionY(crates);
             this.updateAnimation(deltaTime);
         }
     }
 
+    checkCrateCollisionX(crates, deltaTime) {
+        this.pushingCrate = null;
+        const hitboxLeft = this.x + this.hitboxOffsetX;
+        const hitboxRight = hitboxLeft + this.hitboxWidth;
+        const hitboxTop = this.y + this.hitboxOffsetY;
+        const hitboxBottom = hitboxTop + this.hitboxHeight;
+        this.animationSpeed = 1;
+
+        for (let crate of crates) {
+            if (hitboxBottom > crate.y + 2 && hitboxTop < crate.y + crate.height - 2) {
+                if (this.velocityX > 0 && hitboxRight > crate.x && hitboxRight < crate.x + crate.width / 2) {
+                    // Pushing from left
+                    const pushForce = Math.min(Math.abs(this.velocityX) * 0.8, 3);
+                    crate.velocityX = pushForce;
+                    this.pushingCrate = crate;
+                    this.x = crate.x - this.hitboxWidth - this.hitboxOffsetX;
+                    // Keep more of player's velocity while pushing
+                    this.velocityX *= 0.95;
+                    this.animationSpeed = 1.5;
+                } else if (this.velocityX < 0 && hitboxLeft < crate.x + crate.width && hitboxLeft > crate.x + crate.width / 2) {
+                    // Pushing from right
+                    const pushForce = Math.min(Math.abs(this.velocityX) * 0.8, 3);
+                    crate.velocityX = -pushForce;
+                    this.pushingCrate = crate;
+                    this.x = crate.x + crate.width - this.hitboxOffsetX;
+                    // Keep more of player's velocity while pushing
+                    this.velocityX *= 0.95;
+                    this.animationSpeed = 1.5;
+
+                }
+            }
+        }
+    }
+
+    checkCrateCollisionY(crates) {
+        const hitboxLeft = this.x + this.hitboxOffsetX;
+        const hitboxRight = hitboxLeft + this.hitboxWidth;
+        const hitboxTop = this.y + this.hitboxOffsetY;
+        const hitboxBottom = hitboxTop + this.hitboxHeight;
+
+        for (let crate of crates) {
+            if (hitboxRight > crate.x + 2 && hitboxLeft < crate.x + crate.width - 2) {
+                if (this.velocityY > 0 && hitboxBottom > crate.y && hitboxBottom < crate.y + crate.height / 2) {
+                    // Landing on top of crate
+                    this.y = crate.y - this.hitboxHeight - this.hitboxOffsetY;
+                    this.velocityY = 0;
+                    this.onGround = true;
+                } else if (this.velocityY < 0 && hitboxTop < crate.y + crate.height && hitboxTop > crate.y + crate.height / 2) {
+                    // Hitting bottom of crate
+                    this.y = crate.y + crate.height - this.hitboxOffsetY;
+                    this.velocityY = 0;
+                }
+            }
+        }
+    }
+
     updateAnimation(deltaTime) {
-        if (Math.abs(this.velocityX) > 0.5 && this.onGround) {
+        // Lower threshold for animation to prevent flickering while pushing crates
+        if (Math.abs(this.velocityX) > 0.3 && this.onGround) {
             this.animationTimer += deltaTime;
             if (this.animationTimer >= this.animationSpeed) {
                 this.animationTimer = 0;
@@ -608,7 +784,7 @@ class Player {
                 } else {
                     currentSpriteData = PLAYER_IMAGES.fall;
                 }
-            } else if (Math.abs(this.velocityX) > 0.5) {
+            } else if (Math.abs(this.velocityX) > 0.3) {
                 currentSpriteData = PLAYER_IMAGES.run[this.animationFrame];
             } else {
                 currentSpriteData = PLAYER_IMAGES.idle;
@@ -686,6 +862,7 @@ class Game {
         this.level = JSON.parse(JSON.stringify(LEVEL_1));
         this.levelWidth = this.level[0].length * TILE_SIZE;
         this.levelHeight = this.level.length * TILE_SIZE;
+        this.crates = [];
 
         const dims = playerSpriteDimensions || { width: 24, height: 32 };
         this.player = new Player(64, 300, dims.width, dims.height);
@@ -729,10 +906,22 @@ class Game {
             this.levelWidth = this.level[0].length * TILE_SIZE;
             this.levelHeight = this.level.length * TILE_SIZE;
             this.camera = new Camera(this.levelWidth, this.levelHeight);
+
+            // Convert crate tiles to crate objects
+            this.crates = [];
+            for (let row = 0; row < this.level.length; row++) {
+                for (let col = 0; col < this.level[row].length; col++) {
+                    if (this.level[row][col] === TILES.CRATE) {
+                        this.crates.push(new Crate(col * TILE_SIZE, row * TILE_SIZE));
+                        this.level[row][col] = TILES.EMPTY;
+                    }
+                }
+            }
+
             const dims = playerSpriteDimensions || { width: 24, height: 32 };
             this.player = new Player(64, 300, dims.width, dims.height);
             this.player.editMode = this.editMode;
-            console.log(`Level ${levelNumber} loaded successfully!`);
+            console.log(`Level ${levelNumber} loaded successfully! Crates: ${this.crates.length}`);
         } catch (error) {
             console.error(`Error loading level ${levelNumber}:`, error);
             alert(`Could not load level ${levelNumber}. Using default level.`);
@@ -830,12 +1019,41 @@ class Game {
         const tileCol = Math.floor(worldX / TILE_SIZE);
         const tileRow = Math.floor(worldY / TILE_SIZE);
         if (tileRow >= 0 && tileRow < this.level.length && tileCol >= 0 && tileCol < this.level[0].length) {
-            this.level[tileRow][tileCol] = this.selectedTile;
+            // If placing a crate, create a crate object instead of a tile
+            if (this.selectedTile === TILES.CRATE) {
+                // Remove any existing crate at this position
+                this.crates = this.crates.filter(c => {
+                    const crateCol = Math.floor(c.x / TILE_SIZE);
+                    const crateRow = Math.floor(c.y / TILE_SIZE);
+                    return crateCol !== tileCol || crateRow !== tileRow;
+                });
+                // Add new crate
+                this.crates.push(new Crate(tileCol * TILE_SIZE, tileRow * TILE_SIZE));
+                this.level[tileRow][tileCol] = TILES.EMPTY;
+            } else {
+                // Remove any crate at this position when placing other tiles
+                this.crates = this.crates.filter(c => {
+                    const crateCol = Math.floor(c.x / TILE_SIZE);
+                    const crateRow = Math.floor(c.y / TILE_SIZE);
+                    return crateCol !== tileCol || crateRow !== tileRow;
+                });
+                this.level[tileRow][tileCol] = this.selectedTile;
+            }
         }
     }
 
     saveLevel() {
-        const levelString = JSON.stringify(this.level);
+        // Convert crates back to tiles for saving
+        const savedLevel = JSON.parse(JSON.stringify(this.level));
+        for (let crate of this.crates) {
+            const col = Math.floor(crate.x / TILE_SIZE);
+            const row = Math.floor(crate.y / TILE_SIZE);
+            if (row >= 0 && row < savedLevel.length && col >= 0 && col < savedLevel[0].length) {
+                savedLevel[row][col] = TILES.CRATE;
+            }
+        }
+
+        const levelString = JSON.stringify(savedLevel);
         const compressed = btoa(levelString);
         document.getElementById('levelData').value = compressed;
         navigator.clipboard.writeText(compressed).then(() => {
@@ -861,6 +1079,18 @@ class Game {
             this.levelWidth = this.level[0].length * TILE_SIZE;
             this.levelHeight = this.level.length * TILE_SIZE;
             this.camera = new Camera(this.levelWidth, this.levelHeight);
+
+            // Convert crate tiles to crate objects
+            this.crates = [];
+            for (let row = 0; row < this.level.length; row++) {
+                for (let col = 0; col < this.level[row].length; col++) {
+                    if (this.level[row][col] === TILES.CRATE) {
+                        this.crates.push(new Crate(col * TILE_SIZE, row * TILE_SIZE));
+                        this.level[row][col] = TILES.EMPTY;
+                    }
+                }
+            }
+
             alert('Level loaded successfully!');
         } catch (error) {
             alert('Error loading level: Invalid level code.');
@@ -876,6 +1106,7 @@ class Game {
             this.level[rows - 1][col] = TILES.GROUND;
             this.level[rows - 2][col] = TILES.GROUND;
         }
+        this.crates = [];
     }
 
     createNewLevel(width, height) {
@@ -896,11 +1127,55 @@ class Game {
         this.player.velocityX = 0;
         this.velocityY = 0;
         this.player.coins = 0;
+        this.crates = [];
         alert(`New ${width}x${height} level created!`);
     }
 
     update() {
-        this.player.update(this.keys, this.level, this.deltaTime);
+        this.player.update(this.keys, this.level, this.crates, this.deltaTime);
+
+        // Update all crates
+        for (let crate of this.crates) {
+            crate.update(this.level, this.deltaTime);
+        }
+
+        // Check crate-to-crate collision
+        for (let i = 0; i < this.crates.length; i++) {
+            for (let j = i + 1; j < this.crates.length; j++) {
+                const c1 = this.crates[i];
+                const c2 = this.crates[j];
+
+                if (c1.x < c2.x + c2.width && c1.x + c1.width > c2.x &&
+                    c1.y < c2.y + c2.height && c1.y + c1.height > c2.y) {
+                    // Simple separation
+                    const overlapX = Math.min(c1.x + c1.width - c2.x, c2.x + c2.width - c1.x);
+                    const overlapY = Math.min(c1.y + c1.height - c2.y, c2.y + c2.height - c1.y);
+
+                    if (overlapX < overlapY) {
+                        if (c1.x < c2.x) {
+                            c1.x -= overlapX / 2;
+                            c2.x += overlapX / 2;
+                        } else {
+                            c1.x += overlapX / 2;
+                            c2.x -= overlapX / 2;
+                        }
+                        c1.velocityX = 0;
+                        c2.velocityX = 0;
+                    } else {
+                        if (c1.y < c2.y) {
+                            c1.y -= overlapY / 2;
+                            c2.y += overlapY / 2;
+                        } else {
+                            c1.y += overlapY / 2;
+                            c2.y -= overlapY / 2;
+                        }
+                        c1.velocityY = 0;
+                        c2.velocityY = 0;
+                    }
+                }
+            }
+        }
+
         this.camera.follow(this.player);
         if (!this.editMode) {
             const hitboxCenterX = this.player.x + this.player.hitboxOffsetX + this.player.hitboxWidth / 2;
@@ -918,8 +1193,13 @@ class Game {
         this.ctx.fillStyle = '#87CEEB';
         this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         this.drawLevel();
+
+        // Draw crates
+        for (let crate of this.crates) {
+            crate.draw(this.ctx, this.camera);
+        }
+
         this.player.draw(this.ctx, this.camera);
-        this.drawUI();
     }
 
     drawLevel() {
