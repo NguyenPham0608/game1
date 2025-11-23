@@ -513,7 +513,7 @@ class Player {
         this.onGround = false;
         this.coins = 0;
         this.editMode = false;
-        this.flySpeed = 8;
+        this.flySpeed = 1.3;
         this.onWall = false;
         this.wallSlideSpeed = 2;
         this.wallJumpPowerX = 12;
@@ -541,14 +541,16 @@ class Player {
 
     update(keys, level, crates, deltaTime) {
         if (this.editMode) {
-            this.velocityX = 0;
-            this.velocityY = 0;
-            if (keys.left) this.velocityX = -this.flySpeed;
-            if (keys.right) this.velocityX = this.flySpeed;
-            if (keys.up) this.velocityY = -this.flySpeed;
-            if (keys.down) this.velocityY = this.flySpeed;
+
+            if (keys.left) this.velocityX -= this.flySpeed;
+            if (keys.right) this.velocityX += this.flySpeed;
+            if (keys.up) this.velocityY -= this.flySpeed;
+            if (keys.down) this.velocityY += this.flySpeed;
+            this.velocityX *= 0.9;
+            this.velocityY *= 0.9;
             this.x += this.velocityX * deltaTime;
             this.y += this.velocityY * deltaTime;
+
             this.x = Math.max(0, Math.min(this.x, level[0].length * TILE_SIZE - this.width));
             this.y = Math.max(0, Math.min(this.y, level.length * TILE_SIZE - this.height));
         } else {
